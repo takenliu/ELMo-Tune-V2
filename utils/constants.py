@@ -123,8 +123,9 @@ SINE_C = args.sine_c
 SINE_D = args.sine_d
 
 # Path Constants locally
-DB_BENCH_PATH = f"/data/viraj/projects/trace-llm-project/rocksdb/db_bench"
-TRACE_ANALYZER_PATH = f"/data/viraj/projects/trace-llm-project/rocksdb/trace_analyzer"
+#DB_BENCH_PATH = f"/data/viraj/projects/trace-llm-project/rocksdb/db_bench"
+DB_BENCH_PATH = f"/data/home/takenliu/github/ELMo-Tune-V2/rocksdb-8.8.1/db_bench"
+TRACE_ANALYZER_PATH = f"/data/home/takenliu/github/ELMo-Tune-V2/rocksdb-8.8.1/trace_analyzer"
 DB_PATH = f"/data/gpt_project/db"
 FIO_RESULT_PATH = f"data/fio/fio_output_{DEVICE}.txt"
 DEFAULT_OPTION_FILE_DIR = "options_files/default_options_files"

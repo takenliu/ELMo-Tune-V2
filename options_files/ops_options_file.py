@@ -62,16 +62,18 @@ def cleanup_options_file(gpt_options_text, prev_db_bench_args):
     assistant_content = None
     response = request_gpt_with_structured_output(system_content, user_contents, assistant_content, RocksDBOptions, 1.0)
 
-    log_gpt_response(user_contents, str(response.model_dump()))
+    log_gpt_response(user_contents, str(response))
 
     gpt_output_dict = {}
-    for key, value in response.model_dump().items():
+    for key, value in response.items():
         if value is None:
             continue
-        if len(value) > 1:
+        if isinstance(value, dict) and len(value) > 1:
             for k, v in value.items():
                 if v is not None:
                     gpt_output_dict[k] = v
+        elif value is not None:
+            gpt_output_dict[key] = value
 
     changed_value = {}
     clean_output_dict = parse_option_file_to_dict(open(f"{OPTIONS_FILE_DIR}").read())

@@ -12,8 +12,10 @@ mmap_size = 1024
 def create_mmap_file():
     if not(os.path.exists(mmap_file_path)):
         with open(mmap_file_path, "wb") as f:
+            os.chmod(mmap_file_path, 0o666)
             f.write(b'\x00' * mmap_size)
     else:
+        os.chmod(mmap_file_path, 0o666)
         log_update("MMap file already exists. Setting top bit to 0 to avoid db_bench reads.")
         with open(mmap_file_path, "r+b") as f:
             with mmap.mmap(f.fileno(), mmap_size, access=mmap.ACCESS_WRITE) as m:

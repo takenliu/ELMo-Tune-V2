@@ -87,10 +87,11 @@ def parse_fio_output(fio_result, test_type):
     Returns:
     - result_string: string containing the parsed result of the fio test
     '''
+    # FIO output format: "read: IOPS=1957, BW=7831KiB/s (8019kB/s)(459MiB/60001msec)"
     if test_type in ["randwrite", "write"]:
-        pattern = re.compile(r'WRITE: bw=(.*?)\s\(.*?\),\s(.*?)\s\(.*?\)')
+        pattern = re.compile(r'write: IOPS=.*?,\s*BW=(.*?)\s*\((.*?)\)', re.IGNORECASE)
     elif test_type in ["randread", "read"]:
-        pattern = re.compile(r'READ: bw=(.*?)\s\(.*?\),\s(.*?)\s\(.*?\)')
+        pattern = re.compile(r'read: IOPS=.*?,\s*BW=(.*?)\s*\((.*?)\)', re.IGNORECASE)
     else:
         print(f"[FIO] Unsupported test type: {test_type}")
 

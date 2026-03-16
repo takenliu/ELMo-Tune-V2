@@ -1,5 +1,6 @@
 import os
 import re
+import json
 from openai import OpenAI
 from utils.constants import EMBEDDING_MODEL, LLM_MODEL, RAG
 from utils.utils import log_gpt_response, log_update
@@ -17,6 +18,7 @@ spec_client = OpenAI(
 
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
+    base_url="https://fast.poloai.top/v1"
 )
 
 if 'llama' in LLM_MODEL:
@@ -230,37 +232,52 @@ def request_gpt_with_structured_output(system_content, user_contents, assistant_
     - response: python dictionary containing the JSON response from GPT-4
     '''
     
-    messages = [{"role": "system", "content": "You are a helpful assistant."}]
+    messages = [{"role": "system", "content": "You are a helpful assistant. Please return results in strict JSON format without any extra text, comments, or explanations."}]
     if system_content is not None:
-        messages.append({"role": "user", "content": system_content})
+        system_content_with_json = f"{system_content}\nPlease output the result in pure JSON format, do not add any extra content (such as code blocks, explanations, or comments)."
+        messages.append({"role": "user", "content": system_content_with_json})
 
     if assistant_content:
         for i in range(max(len(user_contents), len(assistant_content))):
             if i < len(user_contents):
-                messages.append({"role": "user", "content": user_contents[i]})
+                user_content_with_json = f"{user_contents[i]}\nReturn the final result in JSON format only."
+                messages.append({"role": "user", "content": user_content_with_json})
             if i < len(assistant_content):
                 messages.append({"role": "assistant", "content": assistant_content[i]})
     else:
         for content in user_contents:
-            messages.append({"role": "user", "content": content})
+            content_with_json = f"{content}\nStrictly return the result in JSON format, no other content is allowed"
+            messages.append({"role": "user", "content": content_with_json})
 
     we_did_not_specify_stop_tokens = True
     try:
-        response = spec_client.beta.chat.completions.parse(
+        # 替换Beta parse接口为普通chat.completions.create
+        response = client.chat.completions.create(
+            #model="gpt-3.5-turbo",  # PoloAPI支持的模型
             model="gpt-4o-mini-2024-07-18",
             messages=messages,
             temperature=temperature,
-            response_format=response_format,
+            response_format={"type": "json_object"},  # 强制JSON输出
+            max_tokens=4096  # 避免长度超限
         )
 
+        # 保留原有所有校验逻辑
         if response.choices[0].finish_reason == "length":
             raise Exception("The conversation was too long for the context window, resulting in incomplete JSON")
-        if response.choices[0].message.refusal is not None:
-            raise Exception(f"The OpenAI safety system refused the request and generated a refusal instead. response.choices[0].message.refusal")
+        # PoloAPI无refusal字段，简化校验
+        if hasattr(response.choices[0].message, 'refusal') and response.choices[0].message.refusal is not None:
+            raise Exception(f"The OpenAI safety system refused the request and generated a refusal instead. {response.choices[0].message.refusal}")
         if response.choices[0].finish_reason == "content_filter":
             raise Exception("The model's output included restricted content, so the generation of JSON was halted and may be partial")
+
+        # 手动解析JSON，模拟原parsed字段
+        raw_content = response.choices[0].message.content.strip()
+        parsed_data = json.loads(raw_content)
+
+        return parsed_data  # 保持返回值与原函数一致
+
+    except json.JSONDecodeError as e:
+        raise Exception(f"Failed to parse JSON response: {e}. Raw content: {raw_content}")
     except Exception as e:
         print(e)
         raise e
-    
-    return response.choices[0].message.parsed

@@ -2665,6 +2665,7 @@ struct SharedState {
   long num_initialized;
   long num_done;
   bool start;
+  std::mutex rate_limiter_mutex;
 
   SharedState() : cv(&mu), perf_level(FLAGS_perf_level) {}
 };
@@ -2754,7 +2755,7 @@ class Benchmark {
   int mmap_dynamic_file_desc_ = 0;
   void *mmap_dynamic_file_ = nullptr;
   char *mmap_dynamic_file_addr_ = nullptr;
-
+  std::mutex mmap_dynamic_file_mutex_;  // Mutex to protect dynamic file operations
 
   class ErrorHandlerListener : public EventListener {
    public:
@@ -5068,6 +5069,7 @@ class Benchmark {
     if (FLAGS_dynamic_options_file.empty()) {
       return;
     }
+    std::lock_guard<std::mutex> lock(mmap_dynamic_file_mutex_);
 
     mmap_dynamic_file_desc_ = open(FLAGS_dynamic_options_file.c_str(), O_RDWR);
     if (mmap_dynamic_file_desc_ == -1) {
@@ -5089,6 +5091,8 @@ class Benchmark {
 
   // To Do: Figure out where to insert this function call
   void CloseDynamicOptionsFile() {
+    std::lock_guard<std::mutex> lock(mmap_dynamic_file_mutex_);
+
     if (mmap_dynamic_file_ != nullptr) {
       munmap(mmap_dynamic_file_, 1024);
       mmap_dynamic_file_ = nullptr;
@@ -5104,11 +5108,13 @@ class Benchmark {
     // Use FLAGS_dynamic_options_file to load dynamic options
     // It is assumed that FLAGS_dynamic_options_file is a mmaped json file
 
+    std::lock_guard<std::mutex> lock(mmap_dynamic_file_mutex_);
+
     if (mmap_dynamic_file_desc_ == 0) {
       OpenDynamicOptionsFile();
     }
 
-    if (mmap_dynamic_file_addr_[0] == 1) { 
+    if (mmap_dynamic_file_addr_[0] == 1) {
       int mddf_max_open_file = *reinterpret_cast<int*>(mmap_dynamic_file_addr_ + 1);
       int mddf_max_total_wal_size = *reinterpret_cast<int*>(mmap_dynamic_file_addr_ + 5);
       // int mddf_delete_obsolete_files_period_micros = *reinterpret_cast<int*>(mmap_dynamic_file_addr_ + 9);
@@ -6705,6 +6711,7 @@ class Benchmark {
 
     // the limit of qps initiation
     if (FLAGS_sine_mix_rate) {
+      std::lock_guard<std::mutex> lock(thread->shared->rate_limiter_mutex);
       thread->shared->read_rate_limiter.reset(
           NewGenericRateLimiter(static_cast<int64_t>(read_rate)));
       thread->shared->write_rate_limiter.reset(

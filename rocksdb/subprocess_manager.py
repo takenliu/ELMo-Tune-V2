@@ -179,7 +179,7 @@ def db_bench(db_bench_path, database_path, options, run_count, test_name, previo
 
 
     if SIDE_CHECKER and previous_throughput != None:
-        cgm = CGroupManager("llm_cgroup", helper_script=os.path.abspath("utils/root_cgroup_helper.sh"))
+        cgm = CGroupManager("llm_cgroup", helper_script="/data/home/takenliu/github/ELMo-Tune-V2/ELMo-Tune-V2/utils/root_cgroup_helper.sh")
         cgroup_monitor = CGroupMonitor("llm_cgroup")
         
         if DYNAMIC_OPTION_TUNING:
@@ -289,11 +289,11 @@ def db_bench(db_bench_path, database_path, options, run_count, test_name, previo
     
     else:
 
-        cgm = CGroupManager("llm_cgroup", helper_script=os.path.abspath("utils/root_cgroup_helper.sh"))
+        cgm = CGroupManager("llm_cgroup", helper_script="/data/home/takenliu/github/ELMo-Tune-V2/ELMo-Tune-V2/utils/root_cgroup_helper.sh")
         cgm.create_cgroup()
-        cgm.set_cpu_limit(4)
-        cgm.set_memory_limit(4*1024*1024*1024)
-        cgm.set_memory_swap_limit(4*1024*1024*1024)
+        cgm.set_cpu_limit(4,sudo=True)
+        cgm.set_memory_limit(4*1024*1024*1024,sudo=True)
+        cgm.set_memory_swap_limit(4*1024*1024*1024,sudo=True)
 
         cgroup_monitor = CGroupMonitor("llm_cgroup")
         cgroup_monitor.start_monitor()
