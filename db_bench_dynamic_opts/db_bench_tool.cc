@@ -2755,7 +2755,8 @@ class Benchmark {
   int mmap_dynamic_file_desc_ = 0;
   void *mmap_dynamic_file_ = nullptr;
   char *mmap_dynamic_file_addr_ = nullptr;
-  std::mutex mmap_dynamic_file_mutex_;  // Mutex to protect dynamic file operations
+  std::recursive_mutex mmap_dynamic_file_mutex_;  // Recursive mutex to protect dynamic file operations
+  static std::mutex db_options_mutex_;   // Global mutex to protect db SetOptions calls
 
   class ErrorHandlerListener : public EventListener {
    public:
@@ -5069,7 +5070,7 @@ class Benchmark {
     if (FLAGS_dynamic_options_file.empty()) {
       return;
     }
-    std::lock_guard<std::mutex> lock(mmap_dynamic_file_mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mmap_dynamic_file_mutex_);
 
     mmap_dynamic_file_desc_ = open(FLAGS_dynamic_options_file.c_str(), O_RDWR);
     if (mmap_dynamic_file_desc_ == -1) {
@@ -5091,7 +5092,7 @@ class Benchmark {
 
   // To Do: Figure out where to insert this function call
   void CloseDynamicOptionsFile() {
-    std::lock_guard<std::mutex> lock(mmap_dynamic_file_mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mmap_dynamic_file_mutex_);
 
     if (mmap_dynamic_file_ != nullptr) {
       munmap(mmap_dynamic_file_, 1024);
@@ -5108,10 +5109,15 @@ class Benchmark {
     // Use FLAGS_dynamic_options_file to load dynamic options
     // It is assumed that FLAGS_dynamic_options_file is a mmaped json file
 
-    std::lock_guard<std::mutex> lock(mmap_dynamic_file_mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mmap_dynamic_file_mutex_);
 
     if (mmap_dynamic_file_desc_ == 0) {
-      OpenDynamicOptionsFile();
+        OpenDynamicOptionsFile();
+    }
+
+    // Check if mmap was successful
+    if (mmap_dynamic_file_addr_ == nullptr) {
+        return;
     }
 
     if (mmap_dynamic_file_addr_[0] == 1) {
@@ -5137,29 +5143,33 @@ class Benchmark {
       int mddf_memtable_max_range_deletions = *reinterpret_cast<int*>(mmap_dynamic_file_addr_ + 73);
 
         // {"delete_obsolete_files_period_micros", std::to_string(mddf_delete_obsolete_files_period_micros)},
-      db_.db->SetDBOptions({
-        {"max_open_files", std::to_string(mddf_max_open_file)},
-        {"max_total_wal_size", std::to_string(mddf_max_total_wal_size)},
-        {"max_background_jobs", std::to_string(mddf_max_background_jobs)},
-        {"max_background_compactions", std::to_string(mddf_max_background_compactions)},
-        {"max_subcompactions", std::to_string(mddf_max_subcompactions)},
-        {"stats_dump_period_sec", std::to_string(mddf_stats_dump_period_sec)},
-        {"compaction_readahead_size", std::to_string(mddf_compaction_readahead_size)},
-        {"writable_file_max_buffer_size", std::to_string(mddf_writable_file_max_buffer_size)},
-        {"bytes_per_sync", std::to_string(mddf_bytes_per_sync)},
-        {"wal_bytes_per_sync", std::to_string(mddf_wal_bytes_per_sync)},
-        {"delayed_write_rate", std::to_string(mddf_delayed_write_rate)},
-        {"avoid_flush_during_shutdown", std::to_string(mddf_avoid_flush_during_shutdown)}
-      });
+      // Use global lock to protect SetOptions calls across all threads
+      {
+        std::lock_guard<std::mutex> db_lock(db_options_mutex_);
+        db_.db->SetDBOptions({
+          {"max_open_files", std::to_string(mddf_max_open_file)},
+          {"max_total_wal_size", std::to_string(mddf_max_total_wal_size)},
+          {"max_background_jobs", std::to_string(mddf_max_background_jobs)},
+          {"max_background_compactions", std::to_string(mddf_max_background_compactions)},
+          {"max_subcompactions", std::to_string(mddf_max_subcompactions)},
+          {"stats_dump_period_sec", std::to_string(mddf_stats_dump_period_sec)},
+          {"compaction_readahead_size", std::to_string(mddf_compaction_readahead_size)},
+          {"writable_file_max_buffer_size", std::to_string(mddf_writable_file_max_buffer_size)},
+          {"bytes_per_sync", std::to_string(mddf_bytes_per_sync)},
+          {"wal_bytes_per_sync", std::to_string(mddf_wal_bytes_per_sync)},
+          {"delayed_write_rate", std::to_string(mddf_delayed_write_rate)},
+          {"avoid_flush_during_shutdown", std::to_string(mddf_avoid_flush_during_shutdown)}
+        });
 
-      db_.db->SetOptions({
-        {"write_buffer_size", std::to_string(mddf_write_buffer_size)},
-        {"compression", std::to_string(mddf_compression)},
-        {"level0_file_num_compaction_trigger", std::to_string(mddf_level0_file_num_compaction_trigger)},
-        {"max_bytes_for_level_base", std::to_string(mddf_max_bytes_for_level_base)},
-        {"disable_auto_compactions", std::to_string(mddf_disable_auto_compactions)},
-        {"memtable_max_range_deletions", std::to_string(mddf_memtable_max_range_deletions)}
-      });
+        db_.db->SetOptions({
+          {"write_buffer_size", std::to_string(mddf_write_buffer_size)},
+          {"compression", std::to_string(mddf_compression)},
+          {"level0_file_num_compaction_trigger", std::to_string(mddf_level0_file_num_compaction_trigger)},
+          {"max_bytes_for_level_base", std::to_string(mddf_max_bytes_for_level_base)},
+          {"disable_auto_compactions", std::to_string(mddf_disable_auto_compactions)},
+          {"memtable_max_range_deletions", std::to_string(mddf_memtable_max_range_deletions)}
+        });
+      }
 
       fprintf(stderr, "Received dynamic options\n");
       fprintf(stderr, "max_open_files: %d\n", mddf_max_open_file);
@@ -8925,6 +8935,7 @@ class Benchmark {
 
     // the limit of qps initiation
     if (FLAGS_sine_mix_rate) {
+      std::lock_guard<std::mutex> lock(thread->shared->rate_limiter_mutex);
       thread->shared->read_rate_limiter.reset(
           NewGenericRateLimiter(static_cast<int64_t>(read_rate)));
       thread->shared->write_rate_limiter.reset(
@@ -9265,5 +9276,9 @@ int db_bench_tool(int argc, char** argv) {
 
   return 0;
 }
+
+// Initialize static mutex for protecting db SetOptions calls
+std::mutex Benchmark::db_options_mutex_;
+
 }  // namespace ROCKSDB_NAMESPACE
 #endif

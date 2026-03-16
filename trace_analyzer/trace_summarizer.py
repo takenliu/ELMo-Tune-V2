@@ -1,3 +1,4 @@
+import warnings
 import pandas as pd
 from utils.constants import OUTPUT_PATH
 import numpy as np
@@ -204,7 +205,18 @@ def fit_distribution(data_file):
 
     # Define the two-term exponential function
     def two_term_exponential(x, a, b, c, d):
-        return a * np.exp(b * x) + c * np.exp(d * x)
+        with warnings.catch_warnings():
+            warnings.filterwarnings('error', category=RuntimeWarning)
+            try:
+                result = a * np.exp(b * x) + c * np.exp(d * x)
+                if np.any(np.isinf(result)) or np.any(np.isnan(result)):
+                    print(f"  数值溢出（结果含inf/nan）！x = {x}, a = {a}, b = {b}, c = {c}, d = {d}")
+                    return np.full_like(x, np.nan)
+                return result
+            except (RuntimeWarning, OverflowError, FloatingPointError) as e:
+                print(f"  数值溢出！x = {x}, a = {a}, b = {b}, c = {c}, d = {d}")
+                print(f"  错误信息: {e}")
+                return np.full_like(x, np.nan)
 
     # Fit the data to the two-term exponential model
     initial_guess = [1.0, 1.0, 1.0, 1.0]
